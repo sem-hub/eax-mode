@@ -6,47 +6,47 @@
 
 package byteutil
 
+import (
+	"crypto/subtle"
+	"strconv"
+)
+
 // GfnDouble computes 2 * input in the field of 2^n elements.
 // The irreducible polynomial in the finite field for n=128 is
 // x^128 + x^7 + x^2 + x + 1 (equals 0x87)
 // Constant-time execution in order to avoid side-channel attacks
 func GfnDouble(input []byte) []byte {
-	if len(input) != 16 {
-		panic("Doubling in GFn only implemented for n = 128")
+	var p int
+	switch len(input) {
+	case 8:
+		p = 0x1B
+	case 16:
+		p = 0x87
+	case 32:
+		p = 0x425
+	case 64:
+		p = 0x125
+	case 128:
+		p = 0x80043
+	default:
+		panic("unsupported input size for GfnDouble: " + strconv.Itoa(len(input)))
 	}
 	// If the first bit is zero, return 2L = L << 1
 	// Else return (L << 1) xor 0^120 10000111
-	shifted := ShiftBytesLeft(input)
-	shifted[15] ^= ((input[0] >> 7) * 0x87)
+	var shifted = make([]byte, len(input))
+	v := shift(shifted, input)
+	shifted[len(input)-1] ^= byte(subtle.ConstantTimeSelect(v, p, 0))
 	return shifted
 }
 
-// ShiftBytesLeft outputs the byte array corresponding to x << 1 in binary.
-func ShiftBytesLeft(x []byte) []byte {
-	l := len(x)
-	dst := make([]byte, l)
-	for i := 0; i < l-1; i++ {
-		dst[i] = (x[i] << 1) | (x[i+1] >> 7)
+func shift(dst, src []byte) int {
+	var b, bit byte
+	for i := len(src) - 1; i >= 0; i-- { // a range would be nice
+		bit = src[i] >> 7
+		dst[i] = src[i]<<1 | b
+		b = bit
 	}
-	dst[l-1] = x[l-1] << 1
-	return dst
-}
-
-// ShiftNBytesLeft puts in dst the byte array corresponding to x << n in binary.
-func ShiftNBytesLeft(dst, x []byte, n int) {
-	// Erase first n / 8 bytes
-	copy(dst, x[n/8:])
-
-	// Shift the remaining n % 8 bits
-	bits := uint(n % 8)
-	l := len(dst)
-	for i := 0; i < l-1; i++ {
-		dst[i] = (dst[i] << bits) | (dst[i+1] >> uint(8-bits))
-	}
-	dst[l-1] = dst[l-1] << bits
-
-	// Append trailing zeroes
-	dst = append(dst, make([]byte, n/8)...)
+	return int(b)
 }
 
 // XorBytesMut replaces X with X XOR Y. len(X) must be >= len(Y).
