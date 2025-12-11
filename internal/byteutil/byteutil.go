@@ -16,30 +16,37 @@ import (
 // x^128 + x^7 + x^2 + x + 1 (equals 0x87)
 // Constant-time execution in order to avoid side-channel attacks
 func GfnDouble(input []byte) []byte {
-	var p int
+	var p []byte
 	switch len(input) {
 	case 8:
-		p = 0x1B
+		// x^64 + x^4 + x^3 + x + 1
+		p = []byte{0x1B}
 	case 16:
-		p = 0x87
+		// x^128 + x^7 + x^2 + x + 1
+		p = []byte{0x87}
 	case 32:
-		p = 0x425
+		// x^256 + x^10 + x^5 + x^2 + 1
+		p = []byte{4, 0x25} // 0x425 big-endian
 	case 64:
-		p = 0x125
+		// x^512 + x^8 + x^5 + x^2 + 1
+		p = []byte{1, 0x25} // 0x125 big-endian
 	case 128:
-		p = 0x80043
+		// x^1024 + x^19 + x^6 + x + 1
+		p = []byte{8, 0, 0x43} // 0x80043 big-endian
 	default:
 		panic("unsupported input size for GfnDouble: " + strconv.Itoa(len(input)))
 	}
 	// If the first bit is zero, return 2L = L << 1
-	// Else return (L << 1) xor 0^120 10000111
+	// Else return (L << 1) xor polinomial. shiftLeft(dst, src) returns the first bit.
 	var shifted = make([]byte, len(input))
-	v := shift(shifted, input)
-	shifted[len(input)-1] ^= byte(subtle.ConstantTimeSelect(v, p, 0))
+	v := shiftLeft(shifted, input)
+	for i := 0; i < len(p); i++ {
+		shifted[len(input)-len(p)+i] ^= byte(subtle.ConstantTimeSelect(v, int(p[i]), 0))
+	}
 	return shifted
 }
 
-func shift(dst, src []byte) int {
+func shiftLeft(dst, src []byte) int {
 	var b, bit byte
 	for i := len(src) - 1; i >= 0; i-- { // a range would be nice
 		bit = src[i] >> 7
